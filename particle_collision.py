@@ -1,4 +1,3 @@
-# particle_collision.py
 import pygame
 import random
 from config import *
@@ -19,9 +18,14 @@ class Particle:
         self.size = max(0, self.size - 0.1)
         self.lifetime -= 1
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x=0, camera_y=0):
         if self.lifetime > 0:
-            pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), int(self.size))
+            pygame.draw.circle(
+                screen, 
+                self.color, 
+                (int(self.x - camera_x), int(self.y - camera_y)), 
+                int(self.size)
+            )
 
 class ParticleSystem:
     def __init__(self):
@@ -37,6 +41,6 @@ class ParticleSystem:
             if particle.lifetime <= 0:
                 self.particles.remove(particle)
 
-    def draw(self, screen):
+    def draw(self, screen, camera_x=0, camera_y=0):
         for particle in self.particles:
-            particle.draw(screen)
+            particle.draw(screen, camera_x, camera_y)
