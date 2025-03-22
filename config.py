@@ -83,4 +83,43 @@ COLORS = {
     "yellow": (255, 255, 0),
     "dark_red": (139, 0, 0),
     "ammo": (255, 255, 0),
+    # Additional colors for UI
+    "dark_blue": (0, 0, 139),
+    "light_blue": (173, 216, 230),
+    "gray": (128, 128, 128),
+    "dark_gray": (64, 64, 64),
+    "light_gray": (192, 192, 192),
+    "brown": (165, 42, 42),
+    "orange": (255, 165, 0),
+    "purple": (128, 0, 128),
+    "cyan": (0, 255, 255),
+    "pink": (255, 192, 203),
+    "gold": (255, 215, 0),
+    "silver": (192, 192, 192),
+    "transparent_black": (0, 0, 0, 128),
+}
+
+# UI Settings
+UI_SETTINGS = {
+    "health_bar_width": 200,
+    "health_bar_height": 25,
+    "ammo_bar_width": 150,
+    "minimap_size": 150,
+    "crosshair_size": 20,
+    "crosshair_thickness": 2,
+    "slot_width": 100,
+    "slot_height": 50,
+    "slot_spacing": 10,
+    "tip_display_time": 5000,
+}
+
+# Particle Settings
+PARTICLE_SETTINGS = {
+    "explosion_count": 20,
+    "blood_count": 15,
+    "impact_count": 8,
+    "max_lifetime": 20,
+    "min_lifetime": 10,
+    "max_size": 5,
+    "min_size": 2,
 }
