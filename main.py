@@ -103,9 +103,9 @@ class Game:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_r:
                 self.reset_game()
-                self.game_state = "playing"  # Fixed: changed self.state to self.game_state
+                self.game_state = "playing"
             elif event.key == pygame.K_ESCAPE:
-                self.game_state = "menu"  # Fixed: changed self.state to self.game_state
+                self.game_state = "menu"
 
     def safe_weapon_switch(self, index):
         """Safely switch weapons with validation"""
@@ -181,11 +181,20 @@ class Game:
             if weapon.fire(self.player.rect.center, self.get_world_mouse_position(), self.bullets):
                 self.player.ammo[weapon.name] -= 1
                 self.sound_manager.play_sound("shoot")
+                
+                # Add muzzle flash effect
+                angle = math.atan2(
+                    self.get_world_mouse_position()[1] - self.player.rect.centery,
+                    self.get_world_mouse_position()[0] - self.player.rect.centerx
+                )
+                muzzle_x = self.player.rect.centerx + math.cos(angle) * (self.player.radius + 5)
+                muzzle_y = self.player.rect.centery + math.sin(angle) * (self.player.radius + 5)
+                
                 self.particle_system.add_explosion(
-                    self.player.rect.centerx, 
-                    self.player.rect.centery, 
-                    COLORS['white'], 
-                    5
+                    muzzle_x, 
+                    muzzle_y, 
+                    COLORS['yellow'], 
+                    8
                 )
 
     def update_wave_manager(self):
@@ -212,11 +221,25 @@ class Game:
                     self.sound_manager.play_sound("player_hurt")
                     self.player.apply_knockback(zombie.x, zombie.y)
                     
+                    # Add blood particle effect for player
+                    self.particle_system.add_blood_effect(
+                        self.player.rect.centerx,
+                        self.player.rect.centery,
+                        count=10
+                    )
+                    
                     # Do NOT remove the zombie here!
 
                 if zombie.health <= 0:
                     self.wave_manager.zombies.remove(zombie)
                     self.player.score += 100
+                    
+                    # Add blood splatter and explosion effects
+                    self.particle_system.add_blood_effect(
+                        zombie.x,
+                        zombie.y,
+                        count=15
+                    )
                     self.particle_system.add_explosion(
                         zombie.x,
                         zombie.y,
@@ -237,6 +260,14 @@ class Game:
             pickup_type = random.choice(["health", "ammo"])
             # Implement pickup spawning here
             print(f"Spawned {pickup_type} pickup at {position}")
+            
+            # Add sparkle effect to show pickup appearance
+            self.particle_system.add_sparkle(
+                position[0],
+                position[1],
+                COLORS['gold'] if pickup_type == "ammo" else COLORS['green'],
+                10
+            )
 
     def update_bullets(self):
         """Update all bullets in the game."""
@@ -247,6 +278,15 @@ class Game:
                         bullet.update(self)  # Pass in self, which is the game object
                     else:
                         bullet.update()
+                        
+                        # Add trail for fast bullets (like from sniper rifles)
+                        if hasattr(bullet, 'speed') and bullet.speed > 10:
+                            self.particle_system.add_trail(
+                                bullet.rect.centerx,
+                                bullet.rect.centery,
+                                bullet.color,
+                                3
+                            )
                 else:
                     print(f"Warning: Bullet object {bullet} does not have an update method.")
                     # Remove bullets without update method to prevent further issues
@@ -267,11 +307,13 @@ class Game:
 
                 if self.game_map.check_collision(bullet.rect.centerx, bullet.rect.centery, 4):
                     self.bullets.remove(bullet)
-                    self.particle_system.add_explosion(
+                    
+                    # Add impact particle effect
+                    self.particle_system.add_impact(
                         bullet.rect.centerx,
                         bullet.rect.centery,
                         COLORS['white'],
-                        8
+                        12
                     )
                     self.sound_manager.play_sound("bullet_impact")
                     continue  # Skip zombie collision check
@@ -285,8 +327,15 @@ class Game:
                         if bullet in self.bullets:  # Check if bullet still exists
                             self.bullets.remove(bullet)
                         zombie.take_damage(self.player.current_weapon.damage)
-                        # Add hit effects
-                        self.particle_system.add_explosion(
+                        
+                        # Add blood splatter on hit
+                        self.particle_system.add_blood_effect(
+                            bullet.rect.centerx,
+                            bullet.rect.centery,
+                            count=8
+                        )
+                        # Add hit impact
+                        self.particle_system.add_impact(
                             bullet.rect.centerx,
                             bullet.rect.centery,
                             COLORS['red'],
@@ -325,62 +374,275 @@ class Game:
         # Draw zombies first (under player)
         for zombie in self.wave_manager.zombies:
             try:
-                # Draw zombie as a circle
+                # Draw zombie with shadow effect
+                shadow_radius = zombie.get_render_radius() * 1.2
+                pygame.draw.circle(
+                    self.screen,
+                    COLORS["black"],
+                    (int(zombie.x - camera_x + 4), int(zombie.y - camera_y + 4)),
+                    int(shadow_radius * 0.9),
+                    0
+                )
+                
+                # Draw zombie body
                 pygame.draw.circle(
                     self.screen,
                     zombie.get_render_color(),
                     (int(zombie.x - camera_x), int(zombie.y - camera_y)),
                     zombie.get_render_radius()
                 )
+                
+                # Draw zombie eyes
+                eye_radius = max(2, zombie.get_render_radius() // 5)
+                eye_offset = zombie.get_render_radius() // 3
+                
+                # Direction to player for eyes
+                dx = self.player.rect.centerx - zombie.x
+                dy = self.player.rect.centery - zombie.y
+                dist = max(1, math.hypot(dx, dy))
+                dx, dy = dx / dist, dy / dist
+                
+                # Left eye
+                left_eye_x = int(zombie.x - camera_x - eye_offset + dx * eye_offset * 0.5)
+                left_eye_y = int(zombie.y - camera_y - eye_offset + dy * eye_offset * 0.5)
+                pygame.draw.circle(self.screen, COLORS["black"], (left_eye_x, left_eye_y), eye_radius)
+                
+                # Right eye
+                right_eye_x = int(zombie.x - camera_x + eye_offset + dx * eye_offset * 0.5)
+                right_eye_y = int(zombie.y - camera_y - eye_offset + dy * eye_offset * 0.5)
+                pygame.draw.circle(self.screen, COLORS["black"], (right_eye_x, right_eye_y), eye_radius)
+                
+                # Visual zombie type indicator
+                if zombie.type == "fast":
+                    speed_indicator_x = int(zombie.x - camera_x)
+                    speed_indicator_y = int(zombie.y - camera_y + zombie.get_render_radius() - 5)
+                    # Draw speed lines
+                    for i in range(3):
+                        offset = (i - 1) * 5
+                        pygame.draw.line(
+                            self.screen, 
+                            COLORS["yellow"], 
+                            (speed_indicator_x + offset - 5, speed_indicator_y), 
+                            (speed_indicator_x + offset - 12, speed_indicator_y),
+                            2
+                        )
+                elif zombie.type == "tank":
+                    # Draw armor plates
+                    for angle in range(0, 360, 60):
+                        rad = math.radians(angle)
+                        armor_x = int(zombie.x - camera_x + math.cos(rad) * zombie.get_render_radius() * 0.7)
+                        armor_y = int(zombie.y - camera_y + math.sin(rad) * zombie.get_render_radius() * 0.7)
+                        pygame.draw.circle(self.screen, COLORS["dark_gray"], (armor_x, armor_y), 4)
 
-                # Draw health bar
+                # Draw health bar with fancy styling
                 health_pct = zombie.health / zombie.max_health
                 bar_width = zombie.get_render_radius() * 2
-                filled_width = int(bar_width * health_pct)
-
-                pygame.draw.rect(
-                    self.screen,
-                    COLORS['red'],
-                    (
-                        int(zombie.x - camera_x - bar_width // 2),
-                        int(zombie.y - camera_y - zombie.get_render_radius() - 10),
-                        filled_width,
-                        3
-                    )
+                bar_height = 4
+                bar_bg_rect = (
+                    int(zombie.x - camera_x - bar_width // 2),
+                    int(zombie.y - camera_y - zombie.get_render_radius() - 8),
+                    bar_width,
+                    bar_height
                 )
                 
-                # Ensure zombie has the draw_type_indicator method
-                if hasattr(zombie, 'draw_type_indicator') and callable(zombie.draw_type_indicator):
-                    zombie.draw_type_indicator(self.screen, camera_x, camera_y)
+                # Draw health bar background and border
+                pygame.draw.rect(self.screen, COLORS["black"], 
+                                (bar_bg_rect[0]-1, bar_bg_rect[1]-1, bar_width+2, bar_height+2))
+                
+                # Calculate health bar color based on remaining health
+                if health_pct > 0.6:
+                    health_color = COLORS["green"]
+                elif health_pct > 0.3:
+                    health_color = COLORS["yellow"]
+                else:
+                    health_color = COLORS["red"]
+                
+                # Draw the filled portion
+                filled_width = int(bar_width * health_pct)
+                pygame.draw.rect(
+                    self.screen,
+                    health_color,
+                    (bar_bg_rect[0], bar_bg_rect[1], filled_width, bar_height)
+                )
 
             except Exception as e:
                 print(f"Zombie drawing error: {e}")
 
-        # Draw player
+        # Draw player with visual enhancements
         try:
+            # Draw player shadow
+            pygame.draw.circle(
+                self.screen,
+                COLORS["black"],
+                (int(self.player.rect.centerx - camera_x + 3), int(self.player.rect.centery - camera_y + 3)),
+                self.player.radius,
+                0
+            )
+            
+            # Draw player body
             pygame.draw.circle(
                 self.screen,
                 self.player.color,
                 (int(self.player.rect.centerx - camera_x), int(self.player.rect.centery - camera_y)),
                 self.player.radius
             )
+            
+            # Draw weapon direction indicator
+            mouse_pos = pygame.mouse.get_pos()
+            world_mouse_x = mouse_pos[0] + camera_x
+            world_mouse_y = mouse_pos[1] + camera_y
+            
+            # Calculate direction to mouse
+            dx = world_mouse_x - self.player.rect.centerx
+            dy = world_mouse_y - self.player.rect.centery
+            angle = math.atan2(dy, dx)
+            
+            # Draw weapon indicator (gun barrel)
+            barrel_length = self.player.radius + 10
+            end_x = self.player.rect.centerx + math.cos(angle) * barrel_length
+            end_y = self.player.rect.centery + math.sin(angle) * barrel_length
+            
+            pygame.draw.line(
+                self.screen,
+                COLORS["dark_gray"],
+                (int(self.player.rect.centerx - camera_x), int(self.player.rect.centery - camera_y)),
+                (int(end_x - camera_x), int(end_y - camera_y)),
+                4
+            )
+            
+            # Draw eyes
+            eye_radius = 3
+            eye_offset = self.player.radius // 3
+            
+            # Adjust eye position based on mouse direction
+            look_x = math.cos(angle) * eye_offset * 0.5
+            look_y = math.sin(angle) * eye_offset * 0.5
+            
+            # Left eye
+            pygame.draw.circle(
+                self.screen,
+                COLORS["black"],
+                (int(self.player.rect.centerx - camera_x - eye_offset + look_x), 
+                 int(self.player.rect.centery - camera_y - eye_offset + look_y)),
+                eye_radius
+            )
+            
+            # Right eye
+            pygame.draw.circle(
+                self.screen,
+                COLORS["black"],
+                (int(self.player.rect.centerx - camera_x + eye_offset + look_x), 
+                 int(self.player.rect.centery - camera_y - eye_offset + look_y)),
+                eye_radius
+            )
+            
+            # Show player invulnerability effect
+            if self.player.invulnerable:
+                # Draw shield effect
+                shield_radius = self.player.radius + 5
+                shield_thickness = 2
+                shield_alpha = 128 + int(127 * math.sin(pygame.time.get_ticks() / 100))
+                
+                # Create a surface with per-pixel alpha
+                shield_surface = pygame.Surface((shield_radius*2 + 4, shield_radius*2 + 4), pygame.SRCALPHA)
+                pygame.draw.circle(
+                    shield_surface,
+                    (100, 100, 255, shield_alpha),
+                    (shield_radius + 2, shield_radius + 2),
+                    shield_radius,
+                    shield_thickness
+                )
+                
+                self.screen.blit(
+                    shield_surface,
+                    (int(self.player.rect.centerx - camera_x - shield_radius - 2),
+                     int(self.player.rect.centery - camera_y - shield_radius - 2))
+                )
 
         except Exception as e:
             print(f"Player drawing error: {e}")
 
-        # Draw bullets
+        # Draw bullets with effects
         for bullet in self.bullets:
             try:
-                pygame.draw.rect(
-                    self.screen,
-                    bullet.color,
-                    (
-                        int(bullet.rect.x - camera_x),
-                        int(bullet.rect.y - camera_y),
-                        bullet.rect.width,
-                        bullet.rect.height
+                if isinstance(bullet, Grenade):
+                    # Draw grenade with shadow
+                    pygame.draw.circle(
+                        self.screen,
+                        COLORS["black"],
+                        (int(bullet.x - camera_x + 2), int(bullet.y - camera_y + 2)),
+                        bullet.radius
                     )
-                )
+                    
+                    # Draw grenade body
+                    pygame.draw.circle(
+                        self.screen,
+                        bullet.color,
+                        (int(bullet.x - camera_x), int(bullet.y - camera_y)),
+                        bullet.radius
+                    )
+                    
+                    # Draw grenade details (safety pin, etc)
+                    pygame.draw.line(
+                        self.screen,
+                        COLORS["dark_gray"],
+                        (int(bullet.x - camera_x - 3), int(bullet.y - camera_y - 3)),
+                        (int(bullet.x - camera_x + 3), int(bullet.y - camera_y - 3)),
+                        1
+                    )
+                    
+                    # Add trail effect based on lifetime
+                    if bullet.lifetime < 60: # Add more trail as it's about to explode
+                        trail_intensity = max(0, 60 - bullet.lifetime) / 30
+                        for i in range(3):
+                            trail_alpha = int(200 * trail_intensity * (3-i)/3)
+                            trail_offset = i * 3
+                            
+                            # Calculate trail position opposite to movement direction
+                            trail_x = int(bullet.x - bullet.vx * trail_offset - camera_x) 
+                            trail_y = int(bullet.y - bullet.vy * trail_offset - camera_y)
+                            
+                            # Create a surface with per-pixel alpha
+                            trail_surf = pygame.Surface((bullet.radius*2, bullet.radius*2), pygame.SRCALPHA)
+                            pygame.draw.circle(
+                                trail_surf,
+                                (255, 255, 0, trail_alpha),
+                                (bullet.radius, bullet.radius),
+                                max(1, bullet.radius - i)
+                            )
+                            
+                            self.screen.blit(
+                                trail_surf,
+                                (trail_x - bullet.radius, trail_y - bullet.radius)
+                            )
+                else:
+                    # Draw regular bullet with trail
+                    # Bullet body
+                    pygame.draw.rect(
+                        self.screen,
+                        bullet.color,
+                        (
+                            int(bullet.rect.x - camera_x),
+                            int(bullet.rect.y - camera_y),
+                            bullet.rect.width,
+                            bullet.rect.height
+                        )
+                    )
+                    
+                    # Add bullet trail
+                    if hasattr(bullet, 'vx') and hasattr(bullet, 'vy'):
+                        # Draw trail in opposite direction of movement
+                        trail_length = 8
+                        trail_x = int(bullet.rect.centerx - bullet.vx * trail_length - camera_x)
+                        trail_y = int(bullet.rect.centery - bullet.vy * trail_length - camera_y)
+                        
+                        pygame.draw.line(
+                            self.screen,
+                            (bullet.color[0]//2, bullet.color[1]//2, bullet.color[2]//2),
+                            (int(bullet.rect.centerx - camera_x), int(bullet.rect.centery - camera_y)),
+                            (trail_x, trail_y),
+                            max(1, bullet.rect.width // 2)
+                        )
             except Exception as e:
                 print(f"Bullet drawing error: {e}")
 
