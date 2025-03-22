@@ -158,9 +158,14 @@ class Grenade:
         )
 
     def explode(self, game):
-        game.particle_system.add_explosion(self.x, self.y, count=30)
-        for zombie in game.wave_manager.zombies[:]: #use wave_manager.zombies.
-            distance = math.sqrt((self.x - zombie.rect.centerx) ** 2 + (self.y - zombie.rect.centery) ** 2)
+        game.particle_system.add_explosion(
+            self.x, 
+            self.y, 
+            COLORS['yellow'],
+            30
+        )
+        for zombie in game.wave_manager.zombies[:]:
+            distance = math.sqrt((self.x - zombie.x) ** 2 + (self.y - zombie.y) ** 2)
             if distance <= self.explosion_radius:
                 zombie.take_damage(self.damage)
         game.bullets.remove(self)
