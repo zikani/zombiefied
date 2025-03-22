@@ -1,189 +1,181 @@
 import pygame
-from config import *
+import random
 import math
-from weapon import Pistol, Shotgun, AssaultRifle, SniperRifle, SubmachineGun, GrenadeLauncher  # Import all weapons
+from config import *
 
-class Player:
-    def __init__(self, game_map):
-        self.rect = pygame.Rect(WIDTH // 2, HEIGHT // 2, 32, 32)
-        self.game_map = game_map
-        self.color = COLORS["green"]
-        self.radius = PLAYER_RADIUS
-        self.health = PLAYER_HEALTH
-        self.max_health = PLAYER_HEALTH
-        self.weapons = [Pistol(), Shotgun(), AssaultRifle(), SniperRifle(), SubmachineGun(), GrenadeLauncher()] #add all weapons.
-        self.current_weapon_index = 0
-        self.ammo = {  # Store ammo per weapon type
-            "Pistol": MAX_AMMO["pistol"],
-            "Shotgun": MAX_AMMO["shotgun"],
-            "Assault Rifle": MAX_AMMO["assault_rifle"],
-            "Sniper Rifle": MAX_AMMO["sniper_rifle"],
-            "Submachine Gun": MAX_AMMO["submachine_gun"],
-            "Grenade Launcher": MAX_AMMO["grenade_launcher"]
-        }
-        self.reloading = False
-        self.reload_start_time = 0
-        self.score = 0
-        self.speed = PLAYER_SPEED
-        self.invulnerable = False
-        self.invulnerable_timer = 0
-        self.inventory = []  # Initialize the inventory list
-        self.knockback = [0, 0]
-
-    @property
-    def current_weapon(self):
-        return self.weapons[self.current_weapon_index]
-    
-    def reload(self):
-        if not self.reloading:
-            weapon_name = self.current_weapon.name
-            max_ammo = self.current_weapon.max_ammo
-            if self.ammo[weapon_name] < max_ammo:
-                self.reloading = True
-                self.reload_start_time = pygame.time.get_ticks()
-
-    def update_reload(self):
-        if self.reloading and pygame.time.get_ticks() - self.reload_start_time > RELOAD_TIME:
-            weapon_name = self.current_weapon.name
-            self.ammo[weapon_name] = self.current_weapon.max_ammo
-            self.reloading = False
-
-    def update(self, dx, dy, game_map, mouse_x, mouse_y, weapon_switch, shoot):
-        """Updates player position, weapon, and shooting."""
-        # Apply movement speed
-        dx *= self.speed
-        dy *= self.speed
+class Particle:
+    def __init__(self, x, y, color, particle_type="default"):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.type = particle_type
+        self.size = random.randint(2, 5)
+        self.lifetime = random.randint(10, 20)
+        self.alpha = 255
+        self.max_lifetime = self.lifetime
         
-        # Move the player
-        self.move(dx, dy, game_map)
+        # Set particle behavior based on type
+        if self.type == "explosion":
+            self.vx = random.uniform(-3, 3)
+            self.vy = random.uniform(-3, 3)
+            self.decay_rate = 0.15
+            self.size_decay = random.uniform(0.1, 0.2)
+        elif self.type == "blood":
+            self.vx = random.uniform(-1.5, 1.5)
+            self.vy = random.uniform(-1.5, 1.5) + 0.5  # Blood falls down slightly
+            self.decay_rate = 0.1
+            self.size_decay = random.uniform(0.05, 0.1)
+        elif self.type == "impact":
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(1, 3)
+            self.vx = math.cos(angle) * speed
+            self.vy = math.sin(angle) * speed
+            self.decay_rate = 0.2
+            self.size_decay = random.uniform(0.1, 0.15)
+        elif self.type == "sparkle":
+            self.vx = random.uniform(-0.5, 0.5)
+            self.vy = random.uniform(-0.5, 0.5) - 0.2  # Sparkles rise slightly
+            self.decay_rate = 0.15
+            self.size_decay = random.uniform(0.05, 0.1)
+            self.pulsing = True
+            self.pulse_rate = random.uniform(0.2, 0.4)
+            self.pulse_offset = random.uniform(0, 2 * math.pi)
+        else:  # default
+            self.vx = random.uniform(-2, 2)
+            self.vy = random.uniform(-2, 2)
+            self.decay_rate = 0.1
+            self.size_decay = 0.1
+            self.pulsing = False
+
+    def update(self):
+        # Update position
+        self.x += self.vx
+        self.y += self.vy
         
-        # Handle weapon switching
-        if weapon_switch != 0:  # Changed from is not None to != 0
-            self.switch_weapon(weapon_switch)
+        # Apply physics based on type
+        if self.type == "blood":
+            # Blood slows down due to friction
+            self.vx *= 0.95
+            self.vy *= 0.95
+            # Blood is affected by gravity
+            self.vy += 0.05
+        elif self.type == "sparkle":
+            # Sparkles slow down less
+            self.vx *= 0.98
+            self.vy *= 0.98
+        elif self.type == "explosion":
+            # Explosion particles slow down
+            self.vx *= 0.9
+            self.vy *= 0.9
         
-        # Update invulnerability status
-        if self.invulnerable:
-            if pygame.time.get_ticks() - self.invulnerable_timer > 1000:  # 1 second of invulnerability
-                self.invulnerable = False
+        # Update appearance
+        self.size = max(0, self.size - self.size_decay)
+        self.lifetime -= 1
         
-        # Update reload status
-        self.update_reload()
+        # Update alpha for fading
+        self.alpha = int(255 * (self.lifetime / self.max_lifetime))
         
-        # No need to handle shooting here, it's handled in the Game class
+        # For pulsing particles, make them pulse
+        if hasattr(self, 'pulsing') and self.pulsing:
+            pulse_factor = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() / 100 * self.pulse_rate + self.pulse_offset)
+            self.size *= pulse_factor
 
-    def move(self, dx, dy, game_map):
-        # Normalize diagonal movement
-        if dx != 0 and dy != 0:
-            dx *= 0.7071  # 1/sqrt(2)
-            dy *= 0.7071
-        
-        # Try moving on X axis
-        new_x = self.rect.centerx + dx
-        if not game_map.check_collision(new_x, self.rect.centery, PLAYER_RADIUS):
-            self.rect.centerx = new_x
-        
-        # Try moving on Y axis
-        new_y = self.rect.centery + dy
-        if not game_map.check_collision(self.rect.centerx, new_y, PLAYER_RADIUS):
-            self.rect.centery = new_y
-
-    def switch_weapon(self, index):
-        if 0 <= index < len(self.weapons):
-            self.current_weapon_index = index
-
-    def shoot(self, mouse_x, mouse_y, bullets):
-        weapon_name = self.current_weapon.name
-        if self.ammo[weapon_name] > 0 and not self.reloading:
-            new_bullets = self.current_weapon.fire(self.rect.center, (mouse_x, mouse_y), bullets)
-            if new_bullets:  # Only reduce ammo if bullets were actually fired
-                self.ammo[weapon_name] -= 1
-            return new_bullets
-        return []
-
-    def check_move_valid(self, rect, game_map):
-        # Check four corners and center
-        points = [
-            rect.midleft, rect.midright,
-            rect.midtop, rect.midbottom,
-            rect.center
-        ]
-        return all(game_map.is_passable(x, y) for x, y in points)
-
-    def take_damage(self, amount):
-        if not self.invulnerable:
-            self.health = max(0, self.health - amount)
-            self.invulnerable = True
-            self.invulnerable_timer = pygame.time.get_ticks()
-
-    def heal(self, amount):
-        self.health = min(self.max_health, self.health + amount)
-
-    def add_to_inventory(self, item):
-        self.inventory.append(item)
-
-    
-
-    def apply_knockback(self, source_x, source_y):
-        """Apply knockback effect when hit by an enemy with collision check"""
-        knockback_strength = 20  # Adjust as needed
-
-        dx = self.rect.centerx - source_x
-        dy = self.rect.centery - source_y
-
-        dist = math.hypot(dx, dy)
-        if dist == 0:
-            return
-
-        dx /= dist
-        dy /= dist
-
-        knockback_x = dx * knockback_strength
-        knockback_y = dy * knockback_strength
-
-        # Apply knockback in steps with collision checks
-        steps = int(knockback_strength)
-        for _ in range(steps):
-            new_rect = self.rect.move(dx, dy)
-            if self.game_map.check_collision(new_rect.centerx, new_rect.centery, self.radius): #add player radius.
-                break  # Stop knockback if collision
+    def draw(self, screen, camera_x=0, camera_y=0):
+        if self.lifetime > 0 and self.size > 0:
+            # Create a surface with per-pixel alpha
+            particle_surface = pygame.Surface((int(self.size * 2) + 1, int(self.size * 2) + 1), pygame.SRCALPHA)
+            
+            # Draw different shapes based on particle type
+            if self.type == "sparkle":
+                # For sparkles, draw a star-like shape
+                color_with_alpha = (*self.color, self.alpha)
+                center = (int(self.size) + 1, int(self.size) + 1)
+                
+                # Draw star shape
+                points = []
+                outer_radius = self.size
+                inner_radius = self.size * 0.4
+                for i in range(8):  # 8-pointed star
+                    angle = i * math.pi / 4
+                    if i % 2 == 0:
+                        radius = outer_radius
+                    else:
+                        radius = inner_radius
+                    x = center[0] + radius * math.cos(angle)
+                    y = center[1] + radius * math.sin(angle)
+                    points.append((x, y))
+                
+                pygame.draw.polygon(particle_surface, color_with_alpha, points)
+            
+            elif self.type == "blood":
+                # For blood, draw irregular shapes
+                color_with_alpha = (*self.color, self.alpha)
+                pygame.draw.circle(particle_surface, color_with_alpha, 
+                                  (int(self.size) + 1, int(self.size) + 1), int(self.size))
+                
+                # Add some splatter effect
+                if self.size > 2:
+                    for _ in range(2):
+                        offset_x = random.uniform(-self.size/2, self.size/2)
+                        offset_y = random.uniform(-self.size/2, self.size/2)
+                        pygame.draw.circle(particle_surface, color_with_alpha,
+                                          (int(self.size + offset_x) + 1, int(self.size + offset_y) + 1), 
+                                           int(self.size / 2))
+            
             else:
-                self.rect = new_rect
+                # Standard circle for other particle types
+                color_with_alpha = (*self.color, self.alpha)
+                pygame.draw.circle(particle_surface, color_with_alpha, 
+                                  (int(self.size) + 1, int(self.size) + 1), int(self.size))
+            
+            # Blit the particle surface
+            screen.blit(particle_surface, 
+                       (int(self.x - self.size - camera_x), 
+                        int(self.y - self.size - camera_y)))
 
-    @staticmethod
+
+class ParticleSystem:
+    def __init__(self):
+        self.particles = []
+        self.max_particles = 500  # Limit to prevent performance issues
+
+    def add_explosion(self, x, y, color=COLORS['red'], count=20):
+        """Add explosion effect"""
+        for _ in range(min(count, self.max_particles - len(self.particles))):
+            self.particles.append(Particle(x, y, color, "explosion"))
+
+    def add_blood_effect(self, x, y, count=15):
+        """Add blood splatter effect"""
+        for _ in range(min(count, self.max_particles - len(self.particles))):
+            self.particles.append(Particle(x, y, COLORS['dark_red'], "blood"))
     
+    def add_impact(self, x, y, color=COLORS['white'], count=10):
+        """Add impact/collision effect"""
+        for _ in range(min(count, self.max_particles - len(self.particles))):
+            self.particles.append(Particle(x, y, color, "impact"))
+    
+    def add_sparkle(self, x, y, color=COLORS['gold'], count=5):
+        """Add sparkle/powerup effect"""
+        for _ in range(min(count, self.max_particles - len(self.particles))):
+            self.particles.append(Particle(x, y, color, "sparkle"))
 
-    def handle_input():
-        """Handles player input (movement, weapon switching, shooting)."""
-        keys = pygame.key.get_pressed()
-        dx, dy = 0, 0
-        weapon_switch = None
-        shoot = False
+    def add_trail(self, x, y, color, trail_length=5):
+        """Add trail effect (for fast movement)"""
+        for i in range(trail_length):
+            if len(self.particles) < self.max_particles:
+                p = Particle(x, y, color)
+                p.size = max(1, 3 - i * 0.5)  # Decreasing size
+                p.vx = random.uniform(-0.5, 0.5)
+                p.vy = random.uniform(-0.5, 0.5)
+                p.lifetime = max(5, 10 - i * 2)  # Decreasing lifetime
+                self.particles.append(p)
 
-        # Movement
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            dx -= 1
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            dx += 1
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            dy -= 1
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            dy += 1
+    def update(self):
+        for particle in self.particles[:]:
+            particle.update()
+            if particle.lifetime <= 0 or particle.size <= 0:
+                self.particles.remove(particle)
 
-        # Weapon switching
-        if keys[pygame.K_1]:
-            weapon_switch = 0
-        if keys[pygame.K_2]:
-            weapon_switch = 1
-        if keys[pygame.K_3]:
-            weapon_switch = 2
-        if keys[pygame.K_4]:
-            weapon_switch = 3
-        if keys[pygame.K_5]:
-            weapon_switch = 4
-        if keys[pygame.K_6]:
-            weapon_switch = 5
-
-        # Shooting
-        shoot = pygame.mouse.get_pressed()[0]
-
-        return dx, dy, weapon_switch, shoot
+    def draw(self, screen, camera_x=0, camera_y=0):
+        for particle in self.particles:
+            particle.draw(screen, camera_x, camera_y)
