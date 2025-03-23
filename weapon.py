@@ -6,7 +6,7 @@ from config import *
 
 class Weapon:
     def __init__(self, name, fire_rate, damage, spread, max_ammo):
-        self.name = name  # This is the crucial fix
+        self.name = name 
         self.fire_rate = fire_rate
         self.damage = damage
         self.spread = spread
@@ -88,7 +88,7 @@ class SniperRifle(Weapon):
 
     def fire(self, start_pos, target_pos, bullets):
         if super().fire(start_pos, target_pos, bullets):
-            bullets[-1].speed *= 2 #make sniper bullets faster.
+            bullets[-1].speed *= 2 
             return True
         return False
     
@@ -130,7 +130,7 @@ class Grenade:
         self.damage = damage
         self.speed = 5
         self.explosion_radius = 50
-        self.lifetime = 120
+        self.lifetime = 120 
         self.radius = 8
         self.color = COLORS["yellow"]
         self.dx = target_pos[0] - x
@@ -139,15 +139,27 @@ class Grenade:
         self.vx = math.cos(self.angle) * self.speed
         self.vy = math.sin(self.angle) * self.speed
         self.rect = pygame.Rect(int(self.x - self.radius), int(self.y - self.radius), self.radius * 2, self.radius * 2) #add rect.
+        print(f"Created new grenade: pos=({self.x}, {self.y}), target=({target_pos[0]}, {target_pos[1]}), lifetime={self.lifetime}")
 
     def update(self, game):
+        # Make sure lifetime is not None
+        if self.lifetime is None:
+            print("WARNING: Grenade lifetime was None, resetting to default")
+            self.lifetime = 120
+
         self.x += self.vx
         self.y += self.vy
         self.lifetime -= 1
         self.rect.center = (int(self.x),int(self.y)) #update rect.
 
-        if self.lifetime <= 0:
-            self.explode(game)
+        # Safely check lifetime with None check
+        if self.lifetime is not None and self.lifetime <= 0:
+            try:
+                self.explode(game)
+            except Exception as e:
+                print(f"Error in grenade explode: {e}")
+                import traceback
+                traceback.print_exc()
 
     def draw(self, screen, camera_x=0, camera_y=0):
         pygame.draw.circle(
@@ -158,6 +170,7 @@ class Grenade:
         )
 
     def explode(self, game):
+        print(f"Grenade exploding at ({self.x}, {self.y})")
         game.particle_system.add_explosion(
             self.x, 
             self.y, 
