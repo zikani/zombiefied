@@ -1,184 +1,129 @@
-import pygame
 import random
 import math
-from bullet import Bullet
-from config import *
+import pygame
+from zombie import Zombie
+from config import ZOMBIE_RADIUS, SPAWN_DISTANCE, MAP_SIZE
 
-class Weapon:
-    def __init__(self, name, fire_rate, damage, spread, max_ammo):
-        self.name = name  # This is the crucial fix
-        self.fire_rate = fire_rate
-        self.damage = damage
-        self.spread = spread
-        self.max_ammo = max_ammo
-        self.last_shot = 0
-
-    def can_shoot(self):
-        return pygame.time.get_ticks() - self.last_shot > self.fire_rate
-
-
-    def fire(self, start_pos, target_pos, bullets):
-        if self.can_shoot():
-            self.last_shot = pygame.time.get_ticks()
-            dx = target_pos[0] - start_pos[0]
-            dy = target_pos[1] - start_pos[1]
-            angle = math.atan2(dy, dx)
-            angle += random.uniform(-self.spread, self.spread)
-            bullets.append(Bullet(start_pos[0], start_pos[1], angle))
-            return True
-        return False
-
-class Pistol(Weapon):
+class WaveManager:
     def __init__(self):
-        super().__init__(
-            name="Pistol",
-            fire_rate=500,
-            damage=25,
-            spread=0.05,
-            max_ammo=MAX_AMMO["pistol"]
-        )
+        self.zombies = []
+        self.current_wave = 1
+        self.zombies_per_wave = 5
+        self.spawned_count = 0
+        self.spawn_timer = 0
+        self.spawn_delay = 60  # frames between spawns
+        self.wave_complete = False
 
-class Shotgun(Weapon):
-    def __init__(self):
-        super().__init__(
-            name="Shotgun",
-            fire_rate=1000,
-            damage=8,
-            spread=0.2,
-            max_ammo=MAX_AMMO["shotgun"]
-        )
+    def update(self, player_rect, game_map):
+        """Update wave status and spawn zombies as needed"""
+        try:
+            # Check if wave is complete
+            if not self.zombies and self.spawned_count >= self.zombies_per_wave:
+                self.wave_complete = True
+                self.start_next_wave()
+            
+            # Spawn zombies with delay
+            if self.spawned_count < self.zombies_per_wave:
+                self.spawn_timer += 1
+                if self.spawn_timer >= self.spawn_delay:
+                    self.spawn_timer = 0
+                    self.spawn_zombie(player_rect, game_map)
+        except Exception as e:
+            print(f"Wave manager update error: {e}")
     
-    def fire(self, start_pos, target_pos, bullets):
-        if super().fire(start_pos, target_pos, bullets):
-            for _ in range(7):
-                dx = target_pos[0] - start_pos[0]
-                dy = target_pos[1] - start_pos[1]
-                angle = math.atan2(dy, dx) + random.uniform(-0.3, 0.3)
-                bullets.append(Bullet(start_pos[0], start_pos[1], angle))
+    def start_next_wave(self):
+        """Prepare the next wave of zombies"""
+        try:
+            self.current_wave += 1
+            self.zombies_per_wave = 5 + (self.current_wave * 2)  # Increase zombies per wave
+            self.spawned_count = 0
+            self.wave_complete = False
+            # Make zombies spawn faster in later waves
+            self.spawn_delay = max(10, 60 - (self.current_wave * 2))  
+        except Exception as e:
+            print(f"Error starting next wave: {e}")
+            # Ensure we have valid values even on error
+            self.current_wave = max(1, self.current_wave)
+            self.zombies_per_wave = max(5, self.zombies_per_wave)
+            self.spawned_count = 0
+            self.spawn_delay = max(10, self.spawn_delay)
+    
+    def spawn_zombie(self, player_rect, game_map):
+        """Spawn a zombie at a valid location"""
+        try:
+            # Choose a zombie type based on wave progress
+            zombie_type = self.choose_zombie_type()
+            
+            # Attempt to find a valid spawn location
+            spawn_attempts = 0
+            max_attempts = 20
+            
+            while spawn_attempts < max_attempts:
+                # Generate potential spawn location away from player
+                min_distance = 300
+                max_distance = 600
+                
+                angle = random.uniform(0, 2 * 3.14159)
+                distance = random.uniform(min_distance, max_distance)
+                
+                spawn_x = player_rect.centerx + distance * math.cos(angle)
+                spawn_y = player_rect.centery + distance * math.sin(angle)
+                
+                # Keep within map bounds
+                spawn_x = max(50, min(MAP_SIZE - 50, spawn_x))
+                spawn_y = max(50, min(MAP_SIZE - 50, spawn_y))
+                
+                # Check if spawn location is valid
+                if game_map.is_passable(spawn_x, spawn_y):
+                    zombie = Zombie(spawn_x, spawn_y, zombie_type)
+                    self.zombies.append(zombie)
+                    self.spawned_count += 1
+                    return True
+                
+                spawn_attempts += 1
+            
+            # If we failed to find a valid location after max attempts,
+            # spawn at a fixed offset from player as fallback
+            fallback_x = player_rect.centerx + 400
+            fallback_y = player_rect.centery + 400
+            zombie = Zombie(fallback_x, fallback_y, zombie_type)
+            self.zombies.append(zombie)
+            self.spawned_count += 1
             return True
-        return False
+            
+        except Exception as e:
+            print(f"Error spawning zombie: {e}")
+            return False
     
-class GrenadeLauncher(Weapon):
-    def __init__(self):
-        super().__init__(
-            name="Grenade Launcher",
-            fire_rate=WEAPON_STATS["grenade_launcher"]["fire_rate"],
-            damage=WEAPON_STATS["grenade_launcher"]["damage"],
-            spread=WEAPON_STATS["grenade_launcher"]["spread"],
-            max_ammo=MAX_AMMO["grenade_launcher"]
-        )
+    def choose_zombie_type(self):
+        """Choose a zombie type based on wave number"""
+        try:
+            if self.current_wave >= 5:
+                # More variety in later waves
+                types = ["regular", "fast", "tank"]
+                weights = [0.5, 0.3, 0.2]
+            elif self.current_wave >= 3:
+                # Introduce fast zombies in wave 3
+                types = ["regular", "fast"]
+                weights = [0.7, 0.3]
+            else:
+                # Only regular zombies in early waves
+                return "regular"
+                
+            return random.choices(types, weights=weights, k=1)[0]
+        except Exception as e:
+            print(f"Error choosing zombie type: {e}")
+            return "regular"  # Fall back to regular zombies on error
 
-    def fire(self, start_pos, target_pos, bullets):
-        if self.can_shoot():
-            self.last_shot = pygame.time.get_ticks()
-            grenade = Grenade(start_pos[0], start_pos[1], target_pos, self.damage)
-            bullets.append(grenade)
-            return True
-        return False
-    
-class SniperRifle(Weapon):
-    def __init__(self):
-        super().__init__(
-            name="Sniper Rifle",
-            fire_rate=1500,
-            damage=100,
-            spread=0.01,
-            max_ammo=MAX_AMMO["sniper_rifle"]
-        )
-
-    def fire(self, start_pos, target_pos, bullets):
-        if super().fire(start_pos, target_pos, bullets):
-            bullets[-1].speed *= 2 #make sniper bullets faster.
-            return True
-        return False
-    
-class AssaultRifle(Weapon):
-    def __init__(self):
-        super().__init__(
-            name="Assault Rifle",
-            fire_rate=150,
-            damage=15,
-            spread=0.03,
-            max_ammo=MAX_AMMO["assault_rifle"]
-        )
-    def fire(self, start_pos, target_pos, bullets):
-        if super().fire(start_pos, target_pos, bullets):
-            bullets[-1].speed = 10
-            return True
-        return False
-    
-class SubmachineGun(Weapon):
-    def __init__(self):
-        super().__init__(
-            name="Submachine Gun",
-            fire_rate=100,
-            damage=10,
-            spread=0.08,
-            max_ammo=MAX_AMMO["submachine_gun"]
-        )
-    def fire(self, start_pos, target_pos, bullets):
-        if super().fire(start_pos, target_pos, bullets):
-            bullets[-1].speed = 7
-            return True
-        return False
-    
-class Grenade:
-    def __init__(self, x, y, target_pos, damage):
-        self.x = x
-        self.y = y
-        self.target_pos = target_pos
-        self.damage = damage
-        self.speed = 5
-        self.explosion_radius = 50
-        self.lifetime = 120  # Ensure this is initialized as an integer
-        self.radius = 8
-        self.color = COLORS["yellow"]
-        self.dx = target_pos[0] - x
-        self.dy = target_pos[1] - y
-        self.angle = math.atan2(self.dy, self.dx)
-        self.vx = math.cos(self.angle) * self.speed
-        self.vy = math.sin(self.angle) * self.speed
-        self.rect = pygame.Rect(int(self.x - self.radius), int(self.y - self.radius), self.radius * 2, self.radius * 2) #add rect.
-        print(f"Created new grenade: pos=({self.x}, {self.y}), target=({target_pos[0]}, {target_pos[1]}), lifetime={self.lifetime}")
-
-    def update(self, game):
-        # Make sure lifetime is not None
-        if self.lifetime is None:
-            print("WARNING: Grenade lifetime was None, resetting to default")
-            self.lifetime = 120
-
-        self.x += self.vx
-        self.y += self.vy
-        self.lifetime -= 1
-        self.rect.center = (int(self.x),int(self.y)) #update rect.
-
-        # Safely check lifetime with None check
-        if self.lifetime is not None and self.lifetime <= 0:
-            try:
-                self.explode(game)
-            except Exception as e:
-                print(f"Error in grenade explode: {e}")
-                import traceback
-                traceback.print_exc()
-
-    def draw(self, screen, camera_x=0, camera_y=0):
-        pygame.draw.circle(
-            screen,
-            self.color,
-            (int(self.x - camera_x), int(self.y - camera_y)),
-            self.radius
-        )
-
-    def explode(self, game):
-        print(f"Grenade exploding at ({self.x}, {self.y})")
-        game.particle_system.add_explosion(
-            self.x, 
-            self.y, 
-            COLORS['yellow'],
-            30
-        )
-        for zombie in game.wave_manager.zombies[:]:
-            distance = math.sqrt((self.x - zombie.x) ** 2 + (self.y - zombie.y) ** 2)
-            if distance <= self.explosion_radius:
-                zombie.take_damage(self.damage)
-        game.bullets.remove(self)
+    def draw_zombies(self, screen, camera_x, camera_y):
+        """Draw all zombies in the game with safe iteration"""
+        try:
+            for zombie in self.zombies[:]:  # Use a copy of the list for safe iteration
+                try:
+                    zombie.draw(screen, camera_x, camera_y)
+                except Exception as e:
+                    print(f"Error drawing zombie: {e}")
+                    if zombie in self.zombies:
+                        self.zombies.remove(zombie)
+        except Exception as e:
+            print(f"Error in draw_zombies: {e}")
