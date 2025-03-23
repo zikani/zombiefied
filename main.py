@@ -1,3 +1,4 @@
+from logging import DEBUG
 import pygame
 import sys
 from config import *
@@ -11,6 +12,8 @@ from particle_collision import ParticleSystem
 from sound_manager import SoundManager
 from weapon import *
 import math
+import random
+import traceback
 
 class Game:
     def __init__(self):
@@ -56,26 +59,120 @@ class Game:
             if self.game_state == "menu":
                 self.handle_menu_input(event)
             elif self.game_state == "playing":
-                self.handle_game_input(event)
+                # Check if game is paused first
+                if self.menu.paused:
+                    self.handle_pause_input(event)
+                else:
+                    self.handle_game_input(event)
+                    # Handle minimap input if available
+                    if hasattr(self.menu, 'handle_minimap_input'):
+                        self.menu.handle_minimap_input(event)
             elif self.game_state == "game_over":
                 self.handle_game_over_input(event)
 
     def handle_menu_input(self, event):
         """Process menu screen inputs"""
+        if self.menu.show_settings:
+            self.handle_settings_input(event)
+            return
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
-                self.menu.main_menu_select_previous()
+                self.menu.main_menu_selected = (self.menu.main_menu_selected - 1) % len(self.menu.main_menu_options)
                 self.sound_manager.play_sound("menu_move")
             elif event.key == pygame.K_DOWN:
-                self.menu.main_menu_select_next()
+                self.menu.main_menu_selected = (self.menu.main_menu_selected + 1) % len(self.menu.main_menu_options)
                 self.sound_manager.play_sound("menu_move")
             elif event.key == pygame.K_RETURN:
                 self.sound_manager.play_sound("menu_select")
-                if self.menu.get_main_menu_selection() == 0:
+                selection = self.menu.main_menu_selected
+                if selection == 0:  # Start Game
                     self.game_state = "playing"
                     self.reset_game()
-                else:
+                elif selection == 1:  # Settings
+                    self.menu.show_settings = True
+                    self.menu.settings_selected = 0
+                    self.menu.ui_animations["settings_offset"] = HEIGHT
+                elif selection == 2:  # Quit
                     self.quit_game()
+
+    def handle_settings_input(self, event):
+        """Process settings menu inputs"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.menu.show_settings = False
+                self.sound_manager.play_sound("menu_move")
+                return
+            
+            if event.key == pygame.K_UP:
+                self.menu.settings_selected = (self.menu.settings_selected - 1) % len(self.menu.settings_options)
+                self.sound_manager.play_sound("menu_move")
+            elif event.key == pygame.K_DOWN:
+                self.menu.settings_selected = (self.menu.settings_selected + 1) % len(self.menu.settings_options)
+                self.sound_manager.play_sound("menu_move")
+            elif event.key == pygame.K_RETURN:
+                self.sound_manager.play_sound("menu_select")
+                selected_option = self.menu.settings_options[self.menu.settings_selected]
+                if selected_option == "Back":
+                    self.menu.show_settings = False
+                elif selected_option == "Show FPS":
+                    self.menu.settings["show_fps"] = not self.menu.settings["show_fps"]
+                elif selected_option == "Show Minimap":
+                    self.menu.settings["show_minimap"] = not self.menu.settings["show_minimap"]
+            elif event.key == pygame.K_LEFT:
+                self.adjust_setting(-1)
+            elif event.key == pygame.K_RIGHT:
+                self.adjust_setting(1)
+
+    def adjust_setting(self, direction):
+        """Adjust the selected setting value"""
+        selected_option = self.menu.settings_options[self.menu.settings_selected]
+        
+        if selected_option == "Sound Volume":
+            new_vol = max(0.0, min(1.0, self.menu.settings["sound_volume"] + direction * 0.1))
+            self.menu.settings["sound_volume"] = new_vol
+            self.sound_manager.set_sound_volume(new_vol)
+            self.sound_manager.play_sound("menu_move")
+        elif selected_option == "Music Volume":
+            new_vol = max(0.0, min(1.0, self.menu.settings["music_volume"] + direction * 0.1))
+            self.menu.settings["music_volume"] = new_vol
+            self.sound_manager.set_music_volume(new_vol)
+        elif selected_option == "Graphics Quality":
+            new_val = max(0, min(2, self.menu.settings["graphics_quality"] + direction))
+            self.menu.settings["graphics_quality"] = new_val
+            self.sound_manager.play_sound("menu_move")
+        elif selected_option == "Difficulty":
+            new_val = max(0, min(2, self.menu.settings["difficulty"] + direction))
+            self.menu.settings["difficulty"] = new_val
+            self.sound_manager.play_sound("menu_move")
+
+    def handle_pause_input(self, event):
+        """Process pause menu inputs"""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.menu.paused = False
+                self.menu.ui_animations["pause_alpha"] = 0
+                self.sound_manager.play_sound("menu_move")
+            elif event.key == pygame.K_UP:
+                self.menu.pause_selected = (self.menu.pause_selected - 1) % len(self.menu.pause_options)
+                self.sound_manager.play_sound("menu_move")
+            elif event.key == pygame.K_DOWN:
+                self.menu.pause_selected = (self.menu.pause_selected + 1) % len(self.menu.pause_options)
+                self.sound_manager.play_sound("menu_move")
+            elif event.key == pygame.K_RETURN:
+                self.sound_manager.play_sound("menu_select")
+                selection = self.menu.pause_selected
+                if selection == 0:  # Resume
+                    self.menu.paused = False
+                    self.menu.ui_animations["pause_alpha"] = 0
+                elif selection == 1:  # Settings
+                    self.menu.show_settings = True
+                    self.menu.settings_selected = 0
+                    self.menu.ui_animations["settings_offset"] = HEIGHT
+                elif selection == 2:  # Quit to Menu
+                    self.game_state = "menu"
+                    self.menu.paused = False
+                    self.menu.ui_animations["pause_alpha"] = 0
 
     def handle_game_input(self, event):
         """Process in-game inputs."""
@@ -96,7 +193,46 @@ class Game:
             elif event.key == pygame.K_r:
                 self.initiate_reload()
             elif event.key == pygame.K_ESCAPE:
-                self.game_state = "menu"
+                # Toggle pause
+                self.menu.paused = True
+                self.menu.pause_selected = 0
+                self.sound_manager.play_sound("menu_select")
+            elif event.key == pygame.K_TAB:
+                # Show weapon wheel
+                self.menu.show_weapon_wheel = True
+                self.menu.wheel_alpha = 0
+            elif event.key == pygame.K_q:
+                # Show items wheel
+                self.menu.show_items_wheel = True
+                self.menu.items_alpha = 0
+            elif event.key == pygame.K_c:
+                # Cycle crosshair style
+                if hasattr(self.menu, 'crosshair_style'):
+                    self.menu.crosshair_style = (self.menu.crosshair_style + 1) % 4
+                    self.sound_manager.play_sound("menu_select")
+                
+        elif event.type == pygame.KEYUP:
+            if event.key == pygame.K_TAB:
+                # Hide weapon wheel and apply selection
+                if self.menu.show_weapon_wheel:
+                    self.safe_weapon_switch(self.menu.selected_weapon_index)
+                    self.menu.show_weapon_wheel = False
+            elif event.key == pygame.K_q:
+                # Hide items wheel and use selected item
+                if self.menu.show_items_wheel:
+                    self.use_selected_item()
+                    self.menu.show_items_wheel = False
+        
+        # Handle wheel input if showing
+        if self.menu.show_weapon_wheel:
+            if hasattr(self.menu, 'handle_weapon_wheel_input'):
+                if self.menu.handle_weapon_wheel_input(event, self.player):
+                    self.sound_manager.play_sound("menu_move")
+                    
+        if self.menu.show_items_wheel:
+            if hasattr(self.menu, 'handle_items_wheel_input'):
+                if self.menu.handle_items_wheel_input(event, self.player):
+                    self.sound_manager.play_sound("menu_move")
 
     def handle_game_over_input(self, event):
         """Process game over screen inputs"""
@@ -117,6 +253,98 @@ class Game:
                 self.player.ammo[weapon_name] = self.player.current_weapon.max_ammo
             self.sound_manager.play_sound("weapon_switch")
 
+    def use_selected_item(self):
+        """Use the currently selected item from player's inventory"""
+        if hasattr(self.player, 'inventory') and self.player.inventory:
+            try:
+                if 0 <= self.menu.selected_item_index < len(self.player.inventory):
+                    item = self.player.inventory[self.menu.selected_item_index]
+                    
+                    # Apply item effect based on type
+                    if item["type"] == "health":
+                        # Health item: restore player health
+                        self.player.health = min(self.player.max_health, self.player.health + item["value"])
+                        self.sound_manager.play_sound("health_pickup")
+                    elif item["type"] == "ammo":
+                        # Ammo item: add ammo to current weapon
+                        weapon_name = self.player.current_weapon.name
+                        self.player.ammo[weapon_name] += item["value"]
+                        self.sound_manager.play_sound("ammo_pickup")
+                    elif item["type"] == "grenade":
+                        # Grenade: damage all zombies in radius
+                        self.throw_grenade(item["value"])
+                        self.sound_manager.play_sound("explosion")
+                    elif item["type"] == "speed":
+                        # Speed boost: temporarily increase player speed
+                        self.player.speed += item["value"]
+                        # Schedule speed return after 10 seconds
+                        pygame.time.set_timer(pygame.USEREVENT + 1, 10000)
+                    
+                    # Remove used item
+                    self.player.inventory.pop(self.menu.selected_item_index)
+                    
+                    # Reset selected index if needed
+                    if not self.player.inventory:
+                        self.menu.selected_item_index = 0
+                    elif self.menu.selected_item_index >= len(self.player.inventory):
+                        self.menu.selected_item_index = len(self.player.inventory) - 1
+            except Exception as e:
+                print(f"Error using item: {e}")
+
+    def throw_grenade(self, damage):
+        """Throw a grenade that damages zombies in radius"""
+        try:
+            # Get player position
+            center_x, center_y = self.player.rect.centerx, self.player.rect.centery
+            
+            # Get mouse position for throw direction
+            mouse_pos = pygame.mouse.get_pos()
+            world_mouse_x = mouse_pos[0] + (self.player.rect.centerx - WIDTH // 2)
+            world_mouse_y = mouse_pos[1] + (self.player.rect.centery - HEIGHT // 2)
+            
+            # Calculate throw direction
+            dx = world_mouse_x - center_x
+            dy = world_mouse_y - center_y
+            distance = max(1, math.hypot(dx, dy))
+            dx, dy = dx / distance, dy / distance
+            
+            # Calculate grenade landing position (throw distance of 200 pixels)
+            throw_distance = 200
+            grenade_x = center_x + dx * throw_distance
+            grenade_y = center_y + dy * throw_distance
+            
+            # Create explosion particles
+            explosion_radius = 150
+            self.particle_system.add_explosion(grenade_x, grenade_y, explosion_radius)
+            
+            # Damage zombies in radius
+            for zombie in self.wave_manager.zombies[:]:  # Use a copy to allow removal
+                distance = math.hypot(zombie.x - grenade_x, zombie.y - grenade_y)
+                if distance < explosion_radius:
+                    # Calculate damage based on distance (more damage closer to center)
+                    distance_factor = 1 - (distance / explosion_radius)
+                    actual_damage = damage * distance_factor
+                    
+                    # Apply damage with knockback
+                    zombie.take_damage(actual_damage)
+                    
+                    # Add knockback effect
+                    knockback_strength = 20 * distance_factor
+                    knockback_dx = (zombie.x - grenade_x) / distance * knockback_strength
+                    knockback_dy = (zombie.y - grenade_y) / distance * knockback_strength
+                    zombie.x += knockback_dx
+                    zombie.y += knockback_dy
+                    
+                    # Add damage indicator
+                    self.add_damage_indicator(zombie.x, zombie.y, actual_damage)
+                    
+                    # Check if zombie died
+                    if zombie.health <= 0 and zombie in self.wave_manager.zombies:
+                        self.player.score += zombie.score_value
+                        self.wave_manager.zombies.remove(zombie)
+        except Exception as e:
+            print(f"Error throwing grenade: {e}")
+
     def initiate_reload(self):
         """Start reload process with validation"""
         if hasattr(self.player, 'reloading') and not self.player.reloading:
@@ -125,31 +353,32 @@ class Game:
 
     def update_game(self):
         """Main game update loop"""
-        # Process player input
+        # Get player input
         keys = pygame.key.get_pressed()
-        mouse_buttons = pygame.mouse.get_pressed()
+        mouse_press = pygame.mouse.get_pressed()
         
-        # Calculate movement direction
-        dx = (keys[pygame.K_d] or keys[pygame.K_RIGHT]) - (keys[pygame.K_a] or keys[pygame.K_LEFT])
-        dy = (keys[pygame.K_s] or keys[pygame.K_DOWN]) - (keys[pygame.K_w] or keys[pygame.K_UP])
+        # Movement directions
+        dx, dy = 0, 0
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            dx -= 1
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            dx += 1
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            dy -= 1
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            dy += 1
         
-        # Handle weapon switching via mouse wheel
-        weapon_switch = 0
+        # Weapon switching via scroll wheel is handled in event processing
+        weapon_switch = None
         
-        # Check if shooting
-        shoot = mouse_buttons[0]  # Left mouse button
+        # Get shoot input (left mouse button)
+        shoot = mouse_press[0]
         
-        # Get world mouse position
-        world_mouse = self.get_world_mouse_position()
-        
-        # Update player state
+        # Update player
         self.player.update(
-            dx, dy,
-            self.game_map,
-            world_mouse[0],
-            world_mouse[1],
-            weapon_switch,
-            shoot
+            dx, dy, self.game_map,
+            pygame.mouse.get_pos()[0], pygame.mouse.get_pos()[1],
+            weapon_switch, shoot
         )
         
         # Handle shooting
@@ -160,6 +389,8 @@ class Game:
         self.update_wave_manager()
         self.update_zombies()
         self.update_bullets()
+        self.update_pickups()
+        self.update_damage_indicators()
         self.particle_system.update()
 
     def get_world_mouse_position(self):
@@ -196,6 +427,10 @@ class Game:
                     COLORS['yellow'], 
                     8
                 )
+                
+                # Make crosshair pulse when shooting
+                if hasattr(self.menu, 'pulse_crosshair'):
+                    self.menu.pulse_crosshair()
 
     def update_wave_manager(self):
         """Update wave spawning system"""
@@ -228,6 +463,9 @@ class Game:
                         count=10
                     )
                     
+                    # Add damage indicator
+                    self.add_damage_indicator(self.player.rect.centerx, self.player.rect.centery, 1, is_player=True)
+                    
                     # Do NOT remove the zombie here!
 
                 if zombie.health <= 0:
@@ -255,10 +493,26 @@ class Game:
 
     def try_spawn_pickup(self, position):
         """Attempt to spawn a pickup at the given position"""
-        import random
-        if random.random() < 0.1:  # 10% chance
+        if random.random() < 0.2:  # Increased to 20% chance for better testing
             pickup_type = random.choice(["health", "ammo"])
-            # Implement pickup spawning here
+            
+            # Initialize pickups list if it doesn't exist
+            if not hasattr(self, 'pickups'):
+                self.pickups = []
+                
+            # Create a new pickup
+            pickup = {
+                "type": pickup_type,
+                "x": position[0],
+                "y": position[1],
+                "radius": 15,
+                "value": 30 if pickup_type == "health" else 20,  # Health or ammo amount
+                "color": COLORS['green'] if pickup_type == "health" else COLORS['gold'],
+                "pulse": 0,  # For visual effect
+                "lifetime": 600  # 10 seconds at 60 FPS
+            }
+            
+            self.pickups.append(pickup)
             print(f"Spawned {pickup_type} pickup at {position}")
             
             # Add sparkle effect to show pickup appearance
@@ -268,383 +522,439 @@ class Game:
                 COLORS['gold'] if pickup_type == "ammo" else COLORS['green'],
                 10
             )
+            
+    def update_pickups(self):
+        """Update and handle pickups"""
+        if not hasattr(self, 'pickups'):
+            self.pickups = []
+            return
+            
+        # Update each pickup
+        for pickup in self.pickups[:]:
+            # Update visual effect
+            pickup['pulse'] = (pickup['pulse'] + 0.1) % (2 * math.pi)
+            
+            # Decrease lifetime
+            pickup['lifetime'] -= 1
+            if pickup['lifetime'] <= 0:
+                self.pickups.remove(pickup)
+                continue
+                
+            # Check for player collision
+            distance = math.hypot(
+                pickup['x'] - self.player.rect.centerx,
+                pickup['y'] - self.player.rect.centery
+            )
+            
+            if distance < pickup['radius'] + self.player.radius:
+                # Apply pickup effect
+                if pickup['type'] == 'health':
+                    self.player.health = min(self.player.max_health, self.player.health + pickup['value'])
+                    self.sound_manager.play_sound("pickup")
+                    print(f"Player picked up health, new health: {self.player.health}")
+                elif pickup['type'] == 'ammo':
+                    weapon_name = self.player.current_weapon.name
+                    self.player.ammo[weapon_name] += pickup['value']
+                    self.sound_manager.play_sound("pickup")
+                    print(f"Player picked up ammo for {weapon_name}, new ammo: {self.player.ammo[weapon_name]}")
+                
+                # Add pickup effect
+                self.particle_system.add_sparkle(
+                    pickup['x'],
+                    pickup['y'],
+                    pickup['color'],
+                    20
+                )
+                
+                # Remove the pickup
+                self.pickups.remove(pickup)
+                
+    def draw_pickups(self, screen, camera_x, camera_y):
+        """Draw all pickups with visual effects"""
+        if not hasattr(self, 'pickups'):
+            self.pickups = []
+            return
+            
+        for pickup in self.pickups:
+            # Calculate pulsing size
+            pulse_mod = 1 + 0.2 * math.sin(pickup['pulse'])
+            size = int(pickup['radius'] * pulse_mod)
+            
+            # Draw pickup
+            pygame.draw.circle(
+                screen,
+                pickup['color'],
+                (int(pickup['x'] - camera_x), int(pickup['y'] - camera_y)),
+                size
+            )
+            
+            # Draw icon inside
+            if pickup['type'] == 'health':
+                # Draw plus sign
+                line_color = COLORS['white']
+                center_x = int(pickup['x'] - camera_x)
+                center_y = int(pickup['y'] - camera_y)
+                
+                pygame.draw.line(
+                    screen,
+                    line_color,
+                    (center_x, center_y - size // 2),
+                    (center_x, center_y + size // 2),
+                    3
+                )
+                pygame.draw.line(
+                    screen,
+                    line_color,
+                    (center_x - size // 2, center_y),
+                    (center_x + size // 2, center_y),
+                    3
+                )
+            elif pickup['type'] == 'ammo':
+                # Draw ammo icon (bullet shape)
+                pygame.draw.rect(
+                    screen,
+                    COLORS['white'],
+                    (
+                        int(pickup['x'] - camera_x - size // 4),
+                        int(pickup['y'] - camera_y - size // 2),
+                        size // 2,
+                        size
+                    )
+                )
 
     def update_bullets(self):
-        """Update all bullets in the game."""
+        """Update all bullets and handle collisions"""
         for bullet in self.bullets[:]:
             try:
-                if hasattr(bullet, 'update') and callable(bullet.update):
-                    if isinstance(bullet, Grenade):
-                        bullet.update(self)  # Pass in self, which is the game object
-                    else:
-                        bullet.update()
-                        
-                        # Add trail for fast bullets (like from sniper rifles)
-                        if hasattr(bullet, 'speed') and bullet.speed > 10:
-                            self.particle_system.add_trail(
-                                bullet.rect.centerx,
-                                bullet.rect.centery,
-                                bullet.color,
-                                3
-                            )
-                else:
-                    print(f"Warning: Bullet object {bullet} does not have an update method.")
-                    # Remove bullets without update method to prevent further issues
-                    if bullet in self.bullets:
-                        self.bullets.remove(bullet)
-                    continue  # Skip the rest of the loop for this bullet
-
-                # Safety check for bullet rect
-                if not hasattr(bullet, 'rect'):
-                    print(f"Warning: Bullet object {bullet} does not have a rect attribute.")
-                    if bullet in self.bullets:
-                        self.bullets.remove(bullet)
-                    continue
-
-                if hasattr(bullet, 'is_off_screen') and callable(bullet.is_off_screen) and bullet.is_off_screen():
+                # Check if the bullet is valid
+                if bullet is None:
+                    print("Warning: Found None bullet in bullets list, removing")
                     self.bullets.remove(bullet)
                     continue
-
-                if self.game_map.check_collision(bullet.rect.centerx, bullet.rect.centery, 4):
-                    self.bullets.remove(bullet)
                     
-                    # Add impact particle effect
-                    self.particle_system.add_impact(
-                        bullet.rect.centerx,
-                        bullet.rect.centery,
-                        COLORS['white'],
-                        12
-                    )
-                    self.sound_manager.play_sound("bullet_impact")
-                    continue  # Skip zombie collision check
-
-                for zombie in self.wave_manager.zombies[:]:
-                    # Circle-rectangle collision check
-                    dx = max(zombie.x - bullet.rect.centerx, 0, bullet.rect.centerx - zombie.x)
-                    dy = max(zombie.y - bullet.rect.centery, 0, bullet.rect.centery - zombie.y)
-                    distance = math.hypot(dx, dy)
-                    if distance <= zombie.radius:
-                        if bullet in self.bullets:  # Check if bullet still exists
-                            self.bullets.remove(bullet)
-                        zombie.take_damage(self.player.current_weapon.damage)
-                        
-                        # Add blood splatter on hit
-                        self.particle_system.add_blood_effect(
+                # Basic attribute checks
+                if not hasattr(bullet, 'rect') or bullet.rect is None:
+                    print("Warning: Bullet has no rect attribute or rect is None, removing")
+                    self.bullets.remove(bullet)
+                    continue
+                    
+                # Debug logging
+                bullet_type = type(bullet).__name__
+                has_explode = hasattr(bullet, 'explode')
+                print(f"Bullet type: {bullet_type}, has explode: {has_explode}")
+                
+                # Check if this is a Grenade (which needs the game parameter)
+                if has_explode:
+                    try:
+                        print(f"Calling update with game instance for grenade")
+                        # Directly handle the case where lifetime is None
+                        if hasattr(bullet, 'lifetime') and bullet.lifetime is None:
+                            print("Warning: Grenade has None lifetime, fixing...")
+                            bullet.lifetime = 120  # Default lifetime value
+                        bullet.update(self)
+                    except Exception as e:
+                        print(f"Grenade update error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        self.bullets.remove(bullet)
+                        continue
+                else:
+                    try:
+                        bullet.update()
+                    except Exception as e:
+                        print(f"Bullet update error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        self.bullets.remove(bullet)
+                        continue
+                
+                # Remove bullets that are off-screen
+                if hasattr(bullet, 'is_off_screen') and bullet.is_off_screen():
+                    self.bullets.remove(bullet)
+                    continue
+                    
+                # Check for collision with map obstacles - with safety checks
+                if hasattr(bullet, 'rect') and bullet.rect is not None and hasattr(bullet.rect, 'centerx') and hasattr(bullet.rect, 'centery'):
+                    if self.game_map.check_collision(bullet.rect.centerx, bullet.rect.centery, 4):
+                        self.particle_system.add_explosion(
                             bullet.rect.centerx,
                             bullet.rect.centery,
-                            count=8
-                        )
-                        # Add hit impact
-                        self.particle_system.add_impact(
-                            bullet.rect.centerx,
-                            bullet.rect.centery,
-                            COLORS['red'],
+                            COLORS["white"],
                             5
                         )
-                        self.sound_manager.play_sound("zombie_hit")
-                        break  # Break zombie loop
-
+                        self.bullets.remove(bullet)
+                        continue
+                else:
+                    print(f"Warning: Bullet has invalid rect structure, removing")
+                    self.bullets.remove(bullet)
+                    continue
+                    
+                # Check for collision with zombies
+                for zombie in self.wave_manager.zombies[:]:
+                    try:
+                        # Make sure zombie has required attributes
+                        if not hasattr(zombie, 'x') or not hasattr(zombie, 'y') or not hasattr(zombie, 'radius'):
+                            print("Warning: Zombie missing required attributes")
+                            continue
+                            
+                        if not hasattr(bullet, 'rect') or not hasattr(bullet.rect, 'centerx') or not hasattr(bullet.rect, 'centery'):
+                            print("Warning: Bullet missing required position attributes")
+                            continue
+                            
+                        distance = math.hypot(
+                            zombie.x - bullet.rect.centerx,
+                            zombie.y - bullet.rect.centery
+                        )
+                        
+                        # Ensure all values needed for comparison are not None
+                        if zombie.radius is not None and hasattr(bullet.rect, 'width'):
+                            radius_sum = zombie.radius + (bullet.rect.width // 2)
+                            if distance < radius_sum:
+                                # Handle bullet hit
+                                if hasattr(zombie, 'take_damage'):
+                                    damage = getattr(bullet, 'damage', 1)  # Use damage attribute if available, else default to 1
+                                    zombie.take_damage(damage)
+                                    
+                                    # Add blood effect at hit position
+                                    self.particle_system.add_blood_effect(zombie.x, zombie.y)
+                                    
+                                    # Add damage indicator 
+                                    self.add_damage_indicator(zombie.x, zombie.y, damage)
+                                    
+                                    # Remove the bullet if it's not a special penetrating type
+                                    if not hasattr(bullet, 'penetrating') or not bullet.penetrating:
+                                        if bullet in self.bullets:  # Safety check
+                                            self.bullets.remove(bullet)
+                                            break
+                    except Exception as e:
+                        print(f"Zombie bullet collision error: {e}")
             except Exception as e:
-                print(f"Error updating bullet: {e}")
+                print(f"Bullet update error: {e}")
+                # Remove problematic bullets to prevent continuous errors
                 if bullet in self.bullets:
                     self.bullets.remove(bullet)
 
-    def draw_game(self):
-        """Render all game elements"""
+    def add_damage_indicator(self, x, y, damage, is_critical=False, is_player=False):
+        """Add floating damage number indicator"""
         try:
-            # Calculate camera position
-            camera_x = self.player.rect.centerx - WIDTH//2
-            camera_y = self.player.rect.centery - HEIGHT//2
+            if not hasattr(self, 'damage_indicators'):
+                self.damage_indicators = []
             
-            # Draw game world
+            # Format: [x, y, damage_text, lifetime, offset_x, offset_y, is_critical]
+            color = COLORS["red"] if is_player else (COLORS["yellow"] if is_critical else COLORS["white"])
+            damage_str = str(damage)
+            if is_critical:
+                damage_str = f"CRIT {damage}!"
+            
+            offset_x = random.randint(-20, 20)
+            self.damage_indicators.append([x, y, damage_str, 60, offset_x, 0, color])
+        except Exception as e:
+            print(f"Damage indicator error: {e}")
+
+    def update_damage_indicators(self):
+        """Update floating damage texts"""
+        if not hasattr(self, 'damage_indicators'):
+            self.damage_indicators = []
+            
+        for indicator in self.damage_indicators[:]:
+            indicator[3] -= 1  # Decrease lifetime
+            indicator[5] -= 1  # Move upward
+            
+            if indicator[3] <= 0:
+                self.damage_indicators.remove(indicator)
+
+    def draw_damage_indicators(self, screen, camera_x, camera_y):
+        """Draw all floating damage numbers with error handling"""
+        if not hasattr(self, 'damage_indicators'):
+            self.damage_indicators = []
+            return
+        
+        try:
+            # Cache the font to avoid creating it multiple times
+            if not hasattr(self, 'damage_font') or self.damage_font is None:
+                self.damage_font = pygame.font.Font(None, 20)
+            if not hasattr(self, 'damage_font_large') or self.damage_font_large is None:
+                self.damage_font_large = pygame.font.Font(None, 25)
+                
+            for indicator in self.damage_indicators[:]:
+                try:
+                    x, y, text, lifetime, offset_x, offset_y, color = indicator
+                    
+                    # Fade out based on lifetime
+                    alpha = min(255, int(lifetime * 4.25))
+                    
+                    # Choose font based on critical hit
+                    font = self.damage_font_large if "CRIT" in text else self.damage_font
+                    
+                    # Create damage text
+                    text_surf = font.render(text, True, color)
+                    
+                    # Create surface with transparency
+                    text_surf.set_alpha(alpha)
+                    
+                    # Calculate position with offsets
+                    pos_x = int(x - camera_x + offset_x)
+                    pos_y = int(y - camera_y + offset_y)
+                    
+                    # Draw text
+                    screen.blit(text_surf, (pos_x - text_surf.get_width() // 2, pos_y - text_surf.get_height() // 2))
+                except Exception as e:
+                    print(f"Error drawing damage indicator: {e}")
+                    if indicator in self.damage_indicators:
+                        self.damage_indicators.remove(indicator)
+        except Exception as e:
+            print(f"Error in draw_damage_indicators: {e}")
+            self.damage_indicators = []  # Reset if there's a critical error
+
+    def draw_game(self):
+        """Main game rendering function"""
+        try:
+            # Clear the screen
+            self.screen.fill(COLORS["black"])
+            
+            # Calculate camera position
+            camera_x = self.player.rect.centerx - WIDTH // 2
+            camera_y = self.player.rect.centery - HEIGHT // 2
+            
+            # Draw map
             self.game_map.draw(self.screen, camera_x, camera_y)
-            self.draw_entities(camera_x, camera_y)
+            
+            # Draw bullets
+            for bullet in self.bullets:
+                bullet.draw(self.screen, camera_x, camera_y)
+            
+            # Draw zombies
+            self.wave_manager.draw_zombies(self.screen, camera_x, camera_y)
+            
+            # Draw player
+            self.player.draw(self.screen, camera_x, camera_y)
+            
+            # Draw damage indicators
+            self.draw_damage_indicators(self.screen, camera_x, camera_y)
+            
+            # Draw particles
             self.particle_system.draw(self.screen, camera_x, camera_y)
             
-            # Draw UI elements
-            self.menu.draw_hud(self.screen, self.player, self.wave_manager.wave)
+            # Draw HUD
+            self.menu.draw_hud(self.screen, self.player, self.wave_manager.current_wave)
+            self.menu.draw_crosshair(self.screen, pygame.mouse.get_pos())
             
+            # Minimap
+            self.menu.draw_enhanced_minimap(self.screen, self.player, self.game_map, self.wave_manager.zombies)
+            
+            # Draw weapon wheel if showing
+            if self.menu.show_weapon_wheel:
+                self.menu.draw_weapon_wheel(self.screen, self.player)
+                
+            # Draw items wheel if showing  
+            if self.menu.show_items_wheel:
+                self.menu.draw_items_wheel(self.screen, self.player)
+            
+            # Draw pickups
+            self.draw_pickups(self.screen, camera_x, camera_y)
+            
+            # Draw pause screen if paused
+            if self.menu.paused:
+                self.draw_pause_menu()
+                
+                # If settings menu is open, draw it on top of the pause menu
+                if self.menu.show_settings:
+                    self.draw_settings()
+            
+            # FPS counter
+            if self.menu.settings["show_fps"]:
+                fps = str(int(self.clock.get_fps()))
+                fps_text = self.menu.small_font.render(f"FPS: {fps}", True, COLORS["white"])
+                self.screen.blit(fps_text, (WIDTH - 100, 10))
+            
+            # Debug information
+            if DEBUG:
+                debug_info = [
+                    f"Player pos: ({self.player.rect.centerx}, {self.player.rect.centery})",
+                    f"Zombies: {len(self.wave_manager.zombies)}",
+                    f"Bullets: {len(self.bullets)}",
+                    f"Wave: {self.wave_manager.current_wave}",
+                    f"Score: {self.player.score}"
+                ]
+                
+                for i, info in enumerate(debug_info):
+                    debug_text = self.menu.small_font.render(info, True, COLORS["yellow"])
+                    self.screen.blit(debug_text, (10, 40 + i * 20))
+            
+            # Update the display
             pygame.display.flip()
+            
         except Exception as e:
-            print(f"Rendering error: {e}")
+            print(f"Error in draw_game: {e}")
+            # Continue despite rendering errors
 
-    def draw_entities(self, camera_x, camera_y):
-        """Draw all game entities with camera offset"""
-
-        # Draw zombies first (under player)
-        for zombie in self.wave_manager.zombies:
-            try:
-                # Draw zombie with shadow effect
-                shadow_radius = zombie.get_render_radius() * 1.2
-                pygame.draw.circle(
-                    self.screen,
-                    COLORS["black"],
-                    (int(zombie.x - camera_x + 4), int(zombie.y - camera_y + 4)),
-                    int(shadow_radius * 0.9),
-                    0
-                )
-                
-                # Draw zombie body
-                pygame.draw.circle(
-                    self.screen,
-                    zombie.get_render_color(),
-                    (int(zombie.x - camera_x), int(zombie.y - camera_y)),
-                    zombie.get_render_radius()
-                )
-                
-                # Draw zombie eyes
-                eye_radius = max(2, zombie.get_render_radius() // 5)
-                eye_offset = zombie.get_render_radius() // 3
-                
-                # Direction to player for eyes
-                dx = self.player.rect.centerx - zombie.x
-                dy = self.player.rect.centery - zombie.y
-                dist = max(1, math.hypot(dx, dy))
-                dx, dy = dx / dist, dy / dist
-                
-                # Left eye
-                left_eye_x = int(zombie.x - camera_x - eye_offset + dx * eye_offset * 0.5)
-                left_eye_y = int(zombie.y - camera_y - eye_offset + dy * eye_offset * 0.5)
-                pygame.draw.circle(self.screen, COLORS["black"], (left_eye_x, left_eye_y), eye_radius)
-                
-                # Right eye
-                right_eye_x = int(zombie.x - camera_x + eye_offset + dx * eye_offset * 0.5)
-                right_eye_y = int(zombie.y - camera_y - eye_offset + dy * eye_offset * 0.5)
-                pygame.draw.circle(self.screen, COLORS["black"], (right_eye_x, right_eye_y), eye_radius)
-                
-                # Visual zombie type indicator
-                if zombie.type == "fast":
-                    speed_indicator_x = int(zombie.x - camera_x)
-                    speed_indicator_y = int(zombie.y - camera_y + zombie.get_render_radius() - 5)
-                    # Draw speed lines
-                    for i in range(3):
-                        offset = (i - 1) * 5
-                        pygame.draw.line(
-                            self.screen, 
-                            COLORS["yellow"], 
-                            (speed_indicator_x + offset - 5, speed_indicator_y), 
-                            (speed_indicator_x + offset - 12, speed_indicator_y),
-                            2
-                        )
-                elif zombie.type == "tank":
-                    # Draw armor plates
-                    for angle in range(0, 360, 60):
-                        rad = math.radians(angle)
-                        armor_x = int(zombie.x - camera_x + math.cos(rad) * zombie.get_render_radius() * 0.7)
-                        armor_y = int(zombie.y - camera_y + math.sin(rad) * zombie.get_render_radius() * 0.7)
-                        pygame.draw.circle(self.screen, COLORS["dark_gray"], (armor_x, armor_y), 4)
-
-                # Draw health bar with fancy styling
-                health_pct = zombie.health / zombie.max_health
-                bar_width = zombie.get_render_radius() * 2
-                bar_height = 4
-                bar_bg_rect = (
-                    int(zombie.x - camera_x - bar_width // 2),
-                    int(zombie.y - camera_y - zombie.get_render_radius() - 8),
-                    bar_width,
-                    bar_height
-                )
-                
-                # Draw health bar background and border
-                pygame.draw.rect(self.screen, COLORS["black"], 
-                                (bar_bg_rect[0]-1, bar_bg_rect[1]-1, bar_width+2, bar_height+2))
-                
-                # Calculate health bar color based on remaining health
-                if health_pct > 0.6:
-                    health_color = COLORS["green"]
-                elif health_pct > 0.3:
-                    health_color = COLORS["yellow"]
-                else:
-                    health_color = COLORS["red"]
-                
-                # Draw the filled portion
-                filled_width = int(bar_width * health_pct)
-                pygame.draw.rect(
-                    self.screen,
-                    health_color,
-                    (bar_bg_rect[0], bar_bg_rect[1], filled_width, bar_height)
-                )
-
-            except Exception as e:
-                print(f"Zombie drawing error: {e}")
-
-        # Draw player with visual enhancements
+    def draw_pause_menu(self):
+        """Draw the pause menu overlay"""
         try:
-            # Draw player shadow
-            pygame.draw.circle(
-                self.screen,
-                COLORS["black"],
-                (int(self.player.rect.centerx - camera_x + 3), int(self.player.rect.centery - camera_y + 3)),
-                self.player.radius,
-                0
-            )
+            # Animate the alpha for fade-in effect
+            self.menu.ui_animations["pause_alpha"] = min(180, self.menu.ui_animations["pause_alpha"] + 10)
+            alpha = self.menu.ui_animations["pause_alpha"]
             
-            # Draw player body
-            pygame.draw.circle(
-                self.screen,
-                self.player.color,
-                (int(self.player.rect.centerx - camera_x), int(self.player.rect.centery - camera_y)),
-                self.player.radius
-            )
+            # Create overlay surface with alpha
+            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, alpha))
+            self.screen.blit(overlay, (0, 0))
             
-            # Draw weapon direction indicator
-            mouse_pos = pygame.mouse.get_pos()
-            world_mouse_x = mouse_pos[0] + camera_x
-            world_mouse_y = mouse_pos[1] + camera_y
+            # Draw pause text
+            title_text = self.menu.title_font.render("PAUSED", True, COLORS["white"])
+            title_rect = title_text.get_rect(center=(WIDTH // 2, HEIGHT // 4))
+            self.screen.blit(title_text, title_rect)
             
-            # Calculate direction to mouse
-            dx = world_mouse_x - self.player.rect.centerx
-            dy = world_mouse_y - self.player.rect.centery
-            angle = math.atan2(dy, dx)
-            
-            # Draw weapon indicator (gun barrel)
-            barrel_length = self.player.radius + 10
-            end_x = self.player.rect.centerx + math.cos(angle) * barrel_length
-            end_y = self.player.rect.centery + math.sin(angle) * barrel_length
-            
-            pygame.draw.line(
-                self.screen,
-                COLORS["dark_gray"],
-                (int(self.player.rect.centerx - camera_x), int(self.player.rect.centery - camera_y)),
-                (int(end_x - camera_x), int(end_y - camera_y)),
-                4
-            )
-            
-            # Draw eyes
-            eye_radius = 3
-            eye_offset = self.player.radius // 3
-            
-            # Adjust eye position based on mouse direction
-            look_x = math.cos(angle) * eye_offset * 0.5
-            look_y = math.sin(angle) * eye_offset * 0.5
-            
-            # Left eye
-            pygame.draw.circle(
-                self.screen,
-                COLORS["black"],
-                (int(self.player.rect.centerx - camera_x - eye_offset + look_x), 
-                 int(self.player.rect.centery - camera_y - eye_offset + look_y)),
-                eye_radius
-            )
-            
-            # Right eye
-            pygame.draw.circle(
-                self.screen,
-                COLORS["black"],
-                (int(self.player.rect.centerx - camera_x + eye_offset + look_x), 
-                 int(self.player.rect.centery - camera_y - eye_offset + look_y)),
-                eye_radius
-            )
-            
-            # Show player invulnerability effect
-            if self.player.invulnerable:
-                # Draw shield effect
-                shield_radius = self.player.radius + 5
-                shield_thickness = 2
-                shield_alpha = 128 + int(127 * math.sin(pygame.time.get_ticks() / 100))
-                
-                # Create a surface with per-pixel alpha
-                shield_surface = pygame.Surface((shield_radius*2 + 4, shield_radius*2 + 4), pygame.SRCALPHA)
-                pygame.draw.circle(
-                    shield_surface,
-                    (100, 100, 255, shield_alpha),
-                    (shield_radius + 2, shield_radius + 2),
-                    shield_radius,
-                    shield_thickness
-                )
-                
-                self.screen.blit(
-                    shield_surface,
-                    (int(self.player.rect.centerx - camera_x - shield_radius - 2),
-                     int(self.player.rect.centery - camera_y - shield_radius - 2))
-                )
-
-        except Exception as e:
-            print(f"Player drawing error: {e}")
-
-        # Draw bullets with effects
-        for bullet in self.bullets:
-            try:
-                if isinstance(bullet, Grenade):
-                    # Draw grenade with shadow
-                    pygame.draw.circle(
-                        self.screen,
-                        COLORS["black"],
-                        (int(bullet.x - camera_x + 2), int(bullet.y - camera_y + 2)),
-                        bullet.radius
-                    )
-                    
-                    # Draw grenade body
-                    pygame.draw.circle(
-                        self.screen,
-                        bullet.color,
-                        (int(bullet.x - camera_x), int(bullet.y - camera_y)),
-                        bullet.radius
-                    )
-                    
-                    # Draw grenade details (safety pin, etc)
-                    pygame.draw.line(
-                        self.screen,
-                        COLORS["dark_gray"],
-                        (int(bullet.x - camera_x - 3), int(bullet.y - camera_y - 3)),
-                        (int(bullet.x - camera_x + 3), int(bullet.y - camera_y - 3)),
-                        1
-                    )
-                    
-                    # Add trail effect based on lifetime
-                    if bullet.lifetime < 60: # Add more trail as it's about to explode
-                        trail_intensity = max(0, 60 - bullet.lifetime) / 30
-                        for i in range(3):
-                            trail_alpha = int(200 * trail_intensity * (3-i)/3)
-                            trail_offset = i * 3
-                            
-                            # Calculate trail position opposite to movement direction
-                            trail_x = int(bullet.x - bullet.vx * trail_offset - camera_x) 
-                            trail_y = int(bullet.y - bullet.vy * trail_offset - camera_y)
-                            
-                            # Create a surface with per-pixel alpha
-                            trail_surf = pygame.Surface((bullet.radius*2, bullet.radius*2), pygame.SRCALPHA)
-                            pygame.draw.circle(
-                                trail_surf,
-                                (255, 255, 0, trail_alpha),
-                                (bullet.radius, bullet.radius),
-                                max(1, bullet.radius - i)
-                            )
-                            
-                            self.screen.blit(
-                                trail_surf,
-                                (trail_x - bullet.radius, trail_y - bullet.radius)
-                            )
+            # Draw pause menu options
+            for i, option in enumerate(self.menu.pause_options):
+                if i == self.menu.pause_selected:
+                    # Highlight selected option
+                    color = COLORS["yellow"]
+                    # Add indicator arrow
+                    pygame.draw.polygon(self.screen, COLORS["yellow"], 
+                        [(WIDTH // 2 - 140, HEIGHT // 2 + i * 50), 
+                         (WIDTH // 2 - 120, HEIGHT // 2 + i * 50 + 10), 
+                         (WIDTH // 2 - 140, HEIGHT // 2 + i * 50 + 20)])
                 else:
-                    # Draw regular bullet with trail
-                    # Bullet body
-                    pygame.draw.rect(
-                        self.screen,
-                        bullet.color,
-                        (
-                            int(bullet.rect.x - camera_x),
-                            int(bullet.rect.y - camera_y),
-                            bullet.rect.width,
-                            bullet.rect.height
-                        )
-                    )
-                    
-                    # Add bullet trail
-                    if hasattr(bullet, 'vx') and hasattr(bullet, 'vy'):
-                        # Draw trail in opposite direction of movement
-                        trail_length = 8
-                        trail_x = int(bullet.rect.centerx - bullet.vx * trail_length - camera_x)
-                        trail_y = int(bullet.rect.centery - bullet.vy * trail_length - camera_y)
-                        
-                        pygame.draw.line(
-                            self.screen,
-                            (bullet.color[0]//2, bullet.color[1]//2, bullet.color[2]//2),
-                            (int(bullet.rect.centerx - camera_x), int(bullet.rect.centery - camera_y)),
-                            (trail_x, trail_y),
-                            max(1, bullet.rect.width // 2)
-                        )
-            except Exception as e:
-                print(f"Bullet drawing error: {e}")
+                    color = COLORS["white"]
+                
+                option_text = self.menu.menu_font.render(option, True, color)
+                option_rect = option_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + i * 50))
+                self.screen.blit(option_text, option_rect)
+            
+            # Draw controls help
+            controls_text = self.menu.small_font.render("Use arrow keys to navigate, Enter to select", True, COLORS["white"])
+            controls_rect = controls_text.get_rect(center=(WIDTH // 2, HEIGHT - 50))
+            self.screen.blit(controls_text, controls_rect)
+            
+        except Exception as e:
+            print(f"Error drawing pause menu: {e}")
+
+    def draw_settings(self):
+        """Draw the settings menu based on current state"""
+        try:
+            # Check if the menu has the draw_settings method
+            if hasattr(self.menu, 'draw_settings'):
+                self.menu.draw_settings(self.screen)
+            else:
+                # Fallback if method doesn't exist
+                print("Warning: Menu.draw_settings() method not found")
+                
+                # Draw a basic settings menu
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 180))
+                self.screen.blit(overlay, (0, 0))
+                
+                title_text = self.menu.menu_font.render("Settings", True, COLORS["white"])
+                title_rect = title_text.get_rect(center=(WIDTH // 2, HEIGHT // 4))
+                self.screen.blit(title_text, title_rect)
+                
+                help_text = self.menu.small_font.render("Press ESC to return", True, COLORS["white"])
+                help_rect = help_text.get_rect(center=(WIDTH // 2, HEIGHT - 50))
+                self.screen.blit(help_text, help_rect)
+        except Exception as e:
+            print(f"Error drawing settings menu: {e}")
+            traceback.print_exc()
 
     def reset_game(self):
         """Reset game state to initial values"""
@@ -666,35 +976,58 @@ class Game:
     
     def run(self):
         """Main game loop"""
-        while self.running:
-            self.handle_events()
-            
-            if self.game_state == "menu":
-                # Draw main menu
-                self.screen.fill(COLORS['black'])
-                self.menu.draw_main_menu(self.screen)
-                pygame.display.flip()
-            
-            elif self.game_state == "playing":
-                # Update and draw game state
-                self.update_game()
-                
-                # Check player survival
-                if self.player.health <= 0:
-                    self.game_state = "game_over"
-                    self.sound_manager.play_sound("game_over")
-                    self.sound_manager.stop_music()
-                
-                self.draw_game()
-            
-            elif self.game_state == "game_over":
-                # Draw game over screen
-                self.screen.fill(COLORS['black'])
-                self.menu.draw_game_over(self.screen, self.player.score)
-                pygame.display.flip()
-            
-            # Maintain consistent frame rate
-            self.clock.tick(FPS)
+        try:
+            while self.running:
+                try:
+                    self.handle_events()
+                    
+                    if self.game_state == "menu":
+                        # Draw main menu
+                        self.screen.fill(COLORS['black'])
+                        self.menu.draw_main_menu(self.screen)
+                    
+                    elif self.game_state == "playing":
+                        # Update and draw game state
+                        try:
+                            self.update_game()
+                        except Exception as e:
+                            print(f"Error in update_game: {e}")
+                            import traceback
+                            traceback.print_exc()
+                        
+                        # Check player survival
+                        if self.player.health <= 0:
+                            self.game_state = "game_over"
+                            self.sound_manager.play_sound("game_over")
+                            self.sound_manager.stop_music()
+                        
+                        try:
+                            self.draw_game()
+                        except Exception as e:
+                            print(f"Error in draw_game: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    elif self.game_state == "game_over":
+                        # Draw game over screen
+                        self.screen.fill(COLORS['black'])
+                        self.menu.draw_game_over(self.screen, self.player.score)
+                    
+                    # Update display
+                    pygame.display.flip()
+                    
+                    # Maintain consistent frame rate
+                    self.clock.tick(FPS)
+                    
+                except Exception as e:
+                    print(f"Error in main game loop: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    
+        except Exception as e:
+            print(f"Critical error: {e}")
+            import traceback
+            traceback.print_exc()
 
 if __name__ == "__main__":
     game = Game()
