@@ -33,7 +33,7 @@ MAX_AMMO = {
 WEAPON_STATS = {
     "pistol": {
         "fire_rate": 500,
-        "damage": 20,
+        "damage": 25,
         "spread": 0.05,
     },
     "shotgun": {
@@ -48,17 +48,17 @@ WEAPON_STATS = {
     },
     "sniper_rifle": {
         "fire_rate": 1500,
-        "damage": 100,
+        "damage": 150,
         "spread": 0.01,
     },
     "submachine_gun": {
         "fire_rate": 100,
-        "damage": 10,
+        "damage": 12,
         "spread": 0.08,
     },
     "grenade_launcher": {
         "fire_rate": 2000,
-        "damage": 50,
+        "damage": 500,
         "spread": 0.1,
     },
 }
@@ -105,7 +105,7 @@ UI_SETTINGS = {
     "health_bar_height": 25,
     "ammo_bar_width": 150,
     "minimap_size": 150,
-    "crosshair_size": 20,
+    "crosshair_size": 10,
     "crosshair_thickness": 2,
     "slot_width": 100,
     "slot_height": 50,
