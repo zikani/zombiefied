@@ -88,7 +88,7 @@ class Player:
             self.rect.centery = new_y
 
     def switch_weapon(self, index):
-        if 0 <= index < len(self.weapons):
+        if index is not None and 0 <= index < len(self.weapons):
             self.current_weapon_index = index
 
     def shoot(self, mouse_x, mouse_y, bullets):
@@ -184,3 +184,94 @@ class Player:
         shoot = pygame.mouse.get_pressed()[0]
 
         return dx, dy, weapon_switch, shoot
+
+    def draw(self, screen, camera_x, camera_y):
+        """Draw player with visual enhancements"""
+        # Draw player shadow
+        pygame.draw.circle(
+            screen,
+            COLORS["black"],
+            (int(self.rect.centerx - camera_x + 3), int(self.rect.centery - camera_y + 3)),
+            self.radius,
+            0
+        )
+        
+        # Draw player body
+        pygame.draw.circle(
+            screen,
+            self.color,
+            (int(self.rect.centerx - camera_x), int(self.rect.centery - camera_y)),
+            self.radius
+        )
+        
+        # Draw weapon direction indicator
+        mouse_pos = pygame.mouse.get_pos()
+        world_mouse_x = mouse_pos[0] + camera_x
+        world_mouse_y = mouse_pos[1] + camera_y
+        
+        # Calculate direction to mouse
+        dx = world_mouse_x - self.rect.centerx
+        dy = world_mouse_y - self.rect.centery
+        angle = math.atan2(dy, dx)
+        
+        # Draw weapon indicator (gun barrel)
+        barrel_length = self.radius + 10
+        end_x = self.rect.centerx + math.cos(angle) * barrel_length
+        end_y = self.rect.centery + math.sin(angle) * barrel_length
+        
+        pygame.draw.line(
+            screen,
+            COLORS["dark_gray"],
+            (int(self.rect.centerx - camera_x), int(self.rect.centery - camera_y)),
+            (int(end_x - camera_x), int(end_y - camera_y)),
+            4
+        )
+        
+        # Draw eyes
+        eye_radius = 3
+        eye_offset = self.radius // 3
+        
+        # Adjust eye position based on mouse direction
+        look_x = math.cos(angle) * eye_offset * 0.5
+        look_y = math.sin(angle) * eye_offset * 0.5
+        
+        # Left eye
+        pygame.draw.circle(
+            screen,
+            COLORS["black"],
+            (int(self.rect.centerx - camera_x - eye_offset + look_x), 
+             int(self.rect.centery - camera_y - eye_offset + look_y)),
+            eye_radius
+        )
+        
+        # Right eye
+        pygame.draw.circle(
+            screen,
+            COLORS["black"],
+            (int(self.rect.centerx - camera_x + eye_offset + look_x), 
+             int(self.rect.centery - camera_y - eye_offset + look_y)),
+            eye_radius
+        )
+        
+        # Show player invulnerability effect
+        if self.invulnerable:
+            # Draw shield effect
+            shield_radius = self.radius + 5
+            shield_thickness = 2
+            shield_alpha = 128 + int(127 * math.sin(pygame.time.get_ticks() / 100))
+            
+            # Create a surface with per-pixel alpha
+            shield_surface = pygame.Surface((shield_radius*2 + 4, shield_radius*2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(
+                shield_surface,
+                (100, 100, 255, shield_alpha),
+                (shield_radius + 2, shield_radius + 2),
+                shield_radius,
+                shield_thickness
+            )
+            
+            screen.blit(
+                shield_surface,
+                (int(self.rect.centerx - camera_x - shield_radius - 2),
+                 int(self.rect.centery - camera_y - shield_radius - 2))
+            )
